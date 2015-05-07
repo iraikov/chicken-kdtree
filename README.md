@@ -1,16 +1,8 @@
-[[tags:egg]]
+# kd-tree
 
-== kd-tree
+K-D tree implementation in Chicken Scheme.
 
-K-D tree implementation.
-
-[[toc:]]
-
-== Usage
-
-(require-extension kd-tree)
-
-== Documentation
+## Documentation
 
 This library implements a [[http://en.wikipedia.org/wiki/K-d_tree|k-d
 tree]], a data structure for organizing and searching points in
@@ -33,7 +25,7 @@ Y-coordinates; at the next branch level the chosen axis is Z, and so
 on.
 
 
-=== Point
+### Point
 
 This library currently only supports points in 3D space.
 
@@ -51,18 +43,18 @@ This library currently only supports points in 3D space.
 
 Accessors for the x,y,z coordinates of a 3D point.
 
-=== KD-tree
+### KD-tree
 
 A K-D tree (short for k-dimensional tree) is a space-partitioning data
 structure for organizing points in a k-dimensional space.
 
-==== Constructors
+#### Constructors
    
 <procedure>list->kd-tree:: POINT3D LIST  -> KD-TREE</procedure>
 
 Given a list of points, constructs and returns a K-D tree object.
 
-==== Predicates
+#### Predicates
 
 <procedure>kd-tree? :: KD-TREE -> BOOL </procedure>
 
@@ -84,7 +76,7 @@ subtree lie to the right.
 Checks whether the K-D tree property holds for the given tree and all
 subtrees.
 
-==== Accessors
+#### Accessors
 
 <procedure>kd-tree->list :: KD-TREE -> POINT3D LIST</procedure>
 
@@ -99,7 +91,7 @@ is the relative index of this point, and {{p}} is the point.
 
 <procedure>kd-tree-point :: KD-TREE -> POINT3D  </procedure>
 
-==== Combinators
+#### Combinators
 
 <procedure>kd-tree-map </procedure>
 
@@ -111,7 +103,7 @@ is the relative index of this point, and {{p}} is the point.
 
 <procedure>kd-tree-fold-right* </procedure>
 
-==== Query procedures
+#### Query procedures
 
 <procedure>kd-tree-nearest-neighbor </procedure>
 
@@ -125,44 +117,39 @@ is the relative index of this point, and {{p}} is the point.
 
 <procedure>kd-tree-slice* </procedure>
 
-==== Modifiers
+#### Modifiers
 
 <procedure>kd-tree-remove </procedure>
 
 
-== Examples
+## Examples
 
 
-== About this egg
 
 
-=== Author
+## Version history
 
-[[/users/ivan-raikov|Ivan Raikov]]
+4.1-4.8 : Using f64vector for internal point representation
+4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
+3.2 : Bug fix in kd-tree-near-neighbors
+2.0 : Improvements to internal representation
+1.0 : Initial release
 
-=== Version history
+## License
 
-; 4.1-4.8 : Using f64vector for internal point representation
-; 4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
-; 3.2 : Bug fix in kd-tree-near-neighbors
-; 2.0 : Improvements to internal representation
-; 1.0 : Initial release
-
-=== License
-
-
- Copyright 2012-2015 Ivan Raikov
- 
- This program is free software: you can redistribute it and/or modify
- it under the terms of the GNU General Public License as published by
- the Free Software Foundation, either version 3 of the License, or (at
- your option) any later version.
- 
- This program is distributed in the hope that it will be useful, but
- WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- General Public License for more details.
- 
- A full copy of the GPL license can be found at
- <http://www.gnu.org/licenses/>.
+>
+> Copyright 2012-2015 Ivan Raikov
+> 
+>  This program is free software: you can redistribute it and/or modify
+>  it under the terms of the GNU General Public License as published by
+>  the Free Software Foundation, either version 3 of the License, or (at
+>  your option) any later version.
+>  
+>  This program is distributed in the hope that it will be useful, but
+>  WITHOUT ANY WARRANTY; without even the implied warranty of
+>  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+>  General Public License for more details.
+> 
+>  A full copy of the GPL license can be found at
+>  <http://www.gnu.org/licenses/>.
 
