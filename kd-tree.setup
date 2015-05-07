@@ -1,0 +1,19 @@
+;; -*- Hen -*-
+
+(define (dynld-name fn)		
+  (make-pathname #f fn ##sys#load-dynamic-extension))	
+
+(compile -d2 -O0 -S -s kd-tree.scm -j kd-tree)
+(compile -d2 -O0 -s kd-tree.import.scm)
+
+(install-extension
+
+ ;; Name of your extension:
+  'kd-tree
+
+  ;; Files to install for your extension:
+  `(,(dynld-name "kd-tree") ,(dynld-name "kd-tree.import") )
+  
+  ;; Assoc list with properties for your extension:
+  '((version 4.11)
+    ))
