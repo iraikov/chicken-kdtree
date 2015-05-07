@@ -4,11 +4,11 @@ K-D tree implementation in Chicken Scheme.
 
 ## Documentation
 
-This library implements a [[http://en.wikipedia.org/wiki/K-d_tree|k-d
-tree]], a data structure for organizing and searching points in
-k-dimensional space. 
+This library implements a K-D tree
+(http://en.wikipedia.org/wiki/K-d_tree), which is a data structure for
+organizing and searching points in k-dimensional space.
 
-The k-d tree is a binary search tree in which every branching node
+The K-D tree is a binary search tree in which every branching node
 contains a k-dimensional point, and every leaf node contains a set of
 points. Every branching node represents a splitting hyperplane that
 divides the space into two parts, known as half-spaces.
@@ -42,11 +42,6 @@ This library currently only supports points in 3D space.
 <procedure>point3d-z :: POINT3D -> DOUBLE</procedure>
 
 Accessors for the x,y,z coordinates of a 3D point.
-
-### KD-tree
-
-A K-D tree (short for k-dimensional tree) is a space-partitioning data
-structure for organizing points in a k-dimensional space.
 
 #### Constructors
    
