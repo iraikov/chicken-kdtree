@@ -124,11 +124,11 @@ is the relative index of this point, and {{p}} is the point.
 
 ## Version history
 
-4.1-4.8 : Using f64vector for internal point representation
-4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
-3.2 : Bug fix in kd-tree-near-neighbors
-2.0 : Improvements to internal representation
-1.0 : Initial release
+- 4.1-4.8 : Using f64vector for internal point representation
+- 4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
+- 3.2 : Bug fix in kd-tree-near-neighbors
+- 2.0 : Improvements to internal representation
+- 1.0 : Initial release
 
 ## License
 
