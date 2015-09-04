@@ -90,13 +90,13 @@
 
 
 (define (test1)
-  (let ((n (inexact->exact 1e5)) (k 40) (r 0.2) (randst (random-mtzig:init)))
+  (let ((n (inexact->exact 1e5)) (k 40) (r 0.2) (randst (init)))
   
   (let recur ((ntrials 1))
 
-    (let* ((xs (random-mtzig:f64vector-randn! n randst))
-	   (ys (random-mtzig:f64vector-randn! n randst))
-	   (zs (random-mtzig:f64vector-randn! n randst)))
+    (let* ((xs (f64vector-randn! n randst))
+	   (ys (f64vector-randn! n randst))
+	   (zs (f64vector-randn! n randst)))
 
       (print "random coordinates generated...")
       
@@ -120,8 +120,8 @@
              (dd    (print "tree 1 constructed!"))
              (t2    (time (with-instance ((<KdTree> KdTree3d)) (list->kd-tree pts2))))
              (dd    (print "tree 2 constructed!"))
-             (xi1    (inexact->exact (modulo (random-mtzig:random! randst) n)))
-             (xi2    (inexact->exact (modulo (random-mtzig:random! randst) n)))
+             (xi1    (inexact->exact (modulo (random! randst) n)))
+             (xi2    (inexact->exact (modulo (random! randst) n)))
              (x1     (list-ref pts1 xi1))
              (x2     (list-ref pts2 xi2))
              (xx1    (with-instance ((<Point> Point3d)) 

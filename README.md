@@ -53,11 +53,11 @@ Given a list of points, constructs and returns a K-D tree object.
 
 <procedure>kd-tree? :: KD-TREE -> BOOL </procedure>
 
-Returns {{#t}} if the given object is a K-D tree, {{#f}} otherwise.
+Returns `#t` if the given object is a K-D tree, `#f` otherwise.
 
 <procedure>kd-tree-empty? :: KD-TREE -> BOOL  </procedure>
 
-Returns {{#t}} if the given K-D tree object is empty, {{#f}} otherwise.
+Returns `#t` if the given K-D tree object is empty, `#f` otherwise.
 
 <procedure>kd-tree-is-valid? :: KD-TREE -> BOOL  </procedure>
 
@@ -79,8 +79,8 @@ Returns a list with the points contained in the tree.
 
 <procedure>kd-tree->list* :: KD-TREE -> (INT . POINT3D) LIST </procedure>
 
-Returns a list where every element has the form {{(i . p)}}, where i
-is the relative index of this point, and {{p}} is the point.
+Returns a list where every element has the form `(i . p)`, where `i`
+is the relative index of this point, and `p` is the point.
 
 <procedure>kd-tree-subtrees :: KD-TREE -> KD-TREE LIST</procedure>
 
@@ -124,11 +124,11 @@ is the relative index of this point, and {{p}} is the point.
 
 ## Version history
 
-4.1-4.8 : Using f64vector for internal point representation
-4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
-3.2 : Bug fix in kd-tree-near-neighbors
-2.0 : Improvements to internal representation
-1.0 : Initial release
+- 4.1-4.8 : Using f64vector for internal point representation
+- 4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
+- 3.2 : Bug fix in kd-tree-near-neighbors
+- 2.0 : Improvements to internal representation
+- 1.0 : Initial release
 
 ## License
 
