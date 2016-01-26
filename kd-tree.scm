@@ -23,7 +23,7 @@
 ;; This code is based on the Haskell kd-tree library implementation of
 ;; K-D trees.
 ;;
-;; Copyright 2012-2015 Ivan Raikov
+;; Copyright 2012-2016 Ivan Raikov
 ;;
 ;; This program is free software: you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -134,6 +134,10 @@ EOF
 	    )))
 
 
+  (define (kd-elt-index x) (let ((xp (car x))) (if (number? xp) xp (car xp))))
+  (define (kd-elt-value x) (and (pair? (car x)) (cadar x)))
+  (define (kd-elt-point x) (cadr x))
+
 
   (define (default-<Point> dimension coord)
 
@@ -172,6 +176,8 @@ EOF
 
     ;; constructs a kd-tree from a list of points
     list->kd-tree
+    ;; constructs a kd-tree from a list of points with indices and values
+    list->kd-tree*
     ;; nearest neighbor of a point
     kd-tree-nearest-neighbor
     ;; the index of the nearest neighbor of a point
@@ -431,6 +437,91 @@ EOF
 	list->kd-tree/depth
 	))
       )
+
+  
+  ;; A variant of list->kd-tree specialized for
+  ;; kd-tree-remove. Specifically, it preserves the
+  ;; original point indices.  This variant of
+  ;; list->kd-tree assumes that the input list of points
+  ;; has the form ( (INDEX POINT VALUE) ... )
+
+  (define=> (make-list->kd-tree/depth* <Point>)
+
+      (letrec (
+               
+	       (split
+		(lambda (points depth)
+                  
+		  (let* ((axis   (modulo depth dimension))
+			 (cmpfn  (lambda (p0 p1) (compare-coord axis (kd-elt-point p0) (kd-elt-point p1))))
+			 (sorted (sort points cmpfn))
+			 (median-index (quotient (length sorted) 2))
+			 )
+
+		    (let-values (((lte gte) (split-at sorted median-index)))
+
+		      (let ((median (kd-elt-point (car gte))))
+
+			(let-values (((lt xeq) (span (lambda (x) (< (coord axis (kd-elt-point x)) (coord axis median))) lte)))
+			  
+			  (if (null? xeq)
+			      (values (car gte) lt (cdr gte))
+			      (let ((split-index (length lt)))
+				(values (car xeq) lt (append (cdr xeq) gte))))
+			))
+		      ))
+		  ))
+
+		(list->kd-tree/depth
+		 (lambda (points depth bucket-size)
+
+		   (cond
+
+		    ((null? points) (KdLeaf cis:empty '() '() depth))
+		    
+		    ((<= (length points) bucket-size)
+
+		       (let* (
+			      (ps (map kd-elt-point points)) 
+			      (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
+			      (vs (let ((vs (map kd-elt-value points))) (and (every identity vs) vs)))
+			     )
+                        
+			(KdLeaf ii ps vs (modulo depth dimension))
+			)
+		       )
+		    
+		    ((null? (cdr points))
+
+		     (let* ((ps (map kd-elt-point points))
+			    (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
+			    (vs (map kd-elt-value points)))
+		       
+		       (KdLeaf ii ps vs (modulo depth dimension))
+		       )
+		     )
+		    
+		   (else
+		    (let-values (((median lt gte)
+				  (split points depth)))
+		      
+		      (let* ((depth1 (+ 1 depth))
+			     (i (kd-elt-index median))
+			     (p (kd-elt-point median))
+			     (v (kd-elt-value median))
+			     (axis (modulo depth dimension))
+			     (l (list->kd-tree/depth lt depth1 bucket-size))
+			     (r (list->kd-tree/depth gte depth1 bucket-size))
+			     )
+
+			(KdNode l p i v r axis 
+				(cis:add i (cis:union (kd-tree-node-indices l) (kd-tree-node-indices r))))
+			))
+		    ))
+                   ))
+                )
+        list->kd-tree/depth
+        ))
   
   ;; Returns the nearest neighbor of p in tree t.
   
@@ -674,94 +765,13 @@ EOF
 		))
 	k-nearest-neighbors)))
 
-
-  (define (kd-elt-index x) (let ((xp (car x))) (if (number? xp) xp (car xp))))
-  (define (kd-elt-value x) (and (pair? (car x)) (cadar x)))
-  (define (kd-elt-point x) (cadr x))
   
   ;; removes the point p from t.
   (define=> (make-kd-tree-remove <Point>)
+    
+    (lambda (list->kd-tree/depth)
+
       (letrec (
-	       ;; a variant of list->kd-tree specialized for
-	       ;; kd-tree-remove. Specifically, it preserves the
-	       ;; original point indices.  This variant of
-	       ;; list->kd-tree assumes that the input list of points
-	       ;; has the form ( (INDEX POINT VALUE) ... )
-
-	       (split
-		(lambda (points depth)
-
-;		  (fprintf (current-error-port) "kd-tree-remove: split: points = ~A~%" points)
-		  
-		  (let* ((axis   (modulo depth dimension))
-			 (cmpfn  (lambda (p0 p1) (compare-coord axis (kd-elt-point p0) (kd-elt-point p1))))
-			 (sorted (sort points cmpfn))
-			 (median-index (quotient (length sorted) 2))
-			 )
-
-		    (let-values (((lte gte) (split-at sorted median-index)))
-
-		      (let ((median (kd-elt-point (car gte))))
-
-			(let-values (((lt xeq) (span (lambda (x) (< (coord axis (kd-elt-point x)) (coord axis median))) lte)))
-			  
-			  (if (null? xeq)
-			      (values (car gte) lt (cdr gte))
-			      (let ((split-index (length lt)))
-				(values (car xeq) lt (append (cdr xeq) gte))))
-			))
-		      ))
-		  ))
-
-		(list->kd-tree/depth
-		 (lambda (points depth bucket-size)
-
-;		  (fprintf (current-error-port) "kd-tree-remove:  points = ~A~%" points)
-		   
-		   (cond
-
-		    ((null? points) (KdLeaf cis:empty '() '() depth))
-		    
-		    ((<= (length points) bucket-size)
-
-		       (let* (
-			      (ps (map kd-elt-point points)) 
-			      (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
-			      (vs (let ((vs (map kd-elt-value points))) (and (every identity vs) vs)))
-			     )
-                        
-			(KdLeaf ii ps vs (modulo depth dimension))
-			)
-		       )
-		    
-		    ((null? (cdr points))
-
-		     (let* ((ps (map kd-elt-point points))
-			    (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
-			    (vs (map kd-elt-value points)))
-		       
-		       (KdLeaf ii ps vs (modulo depth dimension))
-		       )
-		     )
-		    
-		   (else
-		    (let-values (((median lt gte)
-				  (split points depth)))
-		      
-		      (let* ((depth1 (+ 1 depth))
-			     (i (kd-elt-index median))
-			     (p (kd-elt-point median))
-			     (v (kd-elt-value median))
-			     (axis (modulo depth dimension))
-			     (l (list->kd-tree/depth lt depth1 bucket-size))
-			     (r (list->kd-tree/depth gte depth1 bucket-size))
-			     )
-
-			(KdNode l p i v r axis 
-				(cis:add i (cis:union (kd-tree-node-indices l) (kd-tree-node-indices r))))
-			))
-		    ))
-		 ))
 
 	       (tree-remove
 		(lambda (t p-kill #!key (bucket-size (* 10 (max (log2 (kd-tree-size t)) 1))) (tol 1e-9))
@@ -851,7 +861,7 @@ EOF
 			 ))
 		)))
 	tree-remove))
-
+    )
 
   ;; Checks whether the K-D tree property holds for a given tree.
   ;;
@@ -958,12 +968,15 @@ EOF
   (define (default-<KdTree> point-class)
     (let* ((list->kd-tree/depth
 	    (make-list->kd-tree/depth point-class))
+           (list->kd-tree/depth*
+	    (make-list->kd-tree/depth* point-class))
 	   (kd-tree-remove
-	    (make-kd-tree-remove point-class) )
+	    ((make-kd-tree-remove point-class) list->kd-tree/depth*))
 	   (kd-tree-nearest-neighbor
 	    (make-kd-tree-nearest-neighbor point-class)))
 
       (make-<KdTree> 
+
        (lambda (points #!key
                        (make-point identity) 
                        (make-value #f)
@@ -973,6 +986,8 @@ EOF
           0 (length points) 
 	  (map (lambda (p) (cons (make-point p) p)) points) 0 
           offset: offset))
+
+       (lambda (points) (list->kd-tree/depth* points 0))
 
        (make-kd-tree-nearest-neighbor point-class)
        (make-kd-tree-nearest-neighbor* point-class)
