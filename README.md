@@ -124,6 +124,7 @@ is the relative index of this point, and `p` is the point.
 
 ## Version history
 
+- 5.0 : added list->kd-tree* procedure to KdTree class
 - 4.1-4.8 : Using f64vector for internal point representation
 - 4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
 - 3.2 : Bug fix in kd-tree-near-neighbors
@@ -133,7 +134,7 @@ is the relative index of this point, and `p` is the point.
 ## License
 
 >
-> Copyright 2012-2015 Ivan Raikov
+> Copyright 2012-2016 Ivan Raikov
 > 
 >  This program is free software: you can redistribute it and/or modify
 >  it under the terms of the GNU General Public License as published by
