@@ -473,7 +473,7 @@ EOF
 		  ))
 
 		(list->kd-tree/depth
-		 (lambda (points depth bucket-size)
+		 (lambda (points depth #!key (bucket-size (* 10 (max (log2 (length points)) 1))))
 
 		   (cond
 
