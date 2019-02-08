@@ -1,0 +1,15 @@
+;;;; kd-tree.egg -*- Scheme -*-
+
+(
+ (synopsis "K-D tree spatial indexing structure.")
+ (license "GPL-3")
+ (category data)
+ (author "Ivan Raikov")
+ (dependencies srfi-1 yasos )
+ (test-dependencies test random-mtzig)
+;; (component-options (csc-options "-O" "-d2"))
+ (components (extension kspace)
+             (extension kd-tree
+                        (component-dependencies kspace) ))
+ )
+

@@ -23,7 +23,7 @@
 ;; This code is based on the Haskell kd-tree library implementation of
 ;; K-D trees.
 ;;
-;; Copyright 2012-2016 Ivan Raikov
+;; Copyright 2012-2019 Ivan Raikov
 ;;
 ;; This program is free software: you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License as
@@ -42,163 +42,97 @@
 (module kd-tree
 	
   (
-   <Point> default-<Point> Point3d Point2d
-   point? make-point
+   make-kd-tree
+   spatial-map?
+   empty?
+   size
+   dimension
+   spatial-map-for-each
+   spatial-map-fold-right
+   spatial-map-fold-right*
+   nearest-neighbor
+   near-neighbors
+   k-nearest-neighbors
+   remove
+   slice
+   get-kspace
+   spatial-map->list
+   is-valid?
+   all-subtrees-are-valid?
+   )
 
-   <KdTree> default-<KdTree> KdTree3d KdTree2d
+  (import scheme (chicken base) (chicken foreign) (prefix (chicken sort) list.)
+          datatype yasos yasos-collections 
+          (only srfi-1 fold list-tabulate split-at span every fold-right take filter filter-map zip)
+	   (only srfi-4 f32vector? f32vector f32vector-ref)
+	   (only (chicken format) fprintf) (only (chicken pretty-print) pp)
+           kspace)
 
-   kd-tree? 
-   kd-tree-empty?
-   kd-tree->list
-   kd-tree->list*
-   kd-tree-map
-   kd-tree-for-each
-   kd-tree-for-each*
-   kd-tree-fold-right
-   kd-tree-fold-right*
-   kd-tree-subtrees
-   kd-tree-node-points
-   kd-tree-node-indices
-   kd-tree-min-index
-   kd-tree-max-index
-   kd-tree-size
-  )
-
-  (import scheme chicken data-structures foreign)
-  
-  (require-library srfi-1 srfi-4 extras cis)
-  (require-extension typeclass datatype)
-
-  (import (only srfi-1 fold list-tabulate split-at span every fold-right take filter filter-map remove zip)
-	   (only srfi-4 f64vector? f64vector f64vector-ref)
-	   (only extras fprintf pp)
-	   (prefix cis cis:))
 
   (define log2 (foreign-lambda double "log2" double))
 
-  (define cdist2
-    (foreign-lambda* double ((int dimension) (f64vector a) (f64vector b))
-#<<EOF
-     int i; double sum, delta;
+  (define-predicate  spatial-map?)
 
-     sum = 0.0;
+  ;; nearest neighbor of a point
+  (define-operation (nearest-neighbor smap p))
+  ;; neighbors of a point within radius r
+  (define-operation (near-neighbors smap p r))
+  ;; k nearest neighbors of a point
+  (define-operation (k-nearest-neighbors smap p k))
+  ;; removes a point from the tree
+  (define-operation (remove smap p))
+  ;; retrieves all points between two planes
+  (define-operation (slice smap l u))
 
-     for (i=0; i<dimension; i++)
-     {
-        delta = (a[i] - b[i]);
-        sum = sum + delta*delta;
-     }
-
-     C_return(sum);
-EOF
-))
-
-  (define-class <Point> 
-    ;; dimension has the number of coordinates of a point.
-    dimension ;; Int
-
-    ;; gets the k'th coordinate, starting from 0.
-    coord ;; Int * Point -> Double
-
-    ;; compares the given coordinates
-    compare-coord ;; Int * Point * Point -> Bool
-
-    ;; returns the squared distance between two points.
-    dist2 ;; Point * Point -> Double
-
-    ;; returns 0, negative or positive number depending on the
-    ;; distance between two points
-    compare-distance
-
-    )
+  (define (range m n)
+    (if (< n m) (range n m)
+        (list-tabulate (- n m) (lambda (i) (+ i m)))))
 
   (define (minimum-by lst less? . rest)
     (if (null? lst) #f
-	(if (null? rest)
-	    (let recur ((lst (cdr lst)) (m (car lst)))
-	      (if (null? lst) m
-		  (if (less? (car lst) m)
-		      (recur (cdr lst) (car lst))
-		      (recur (cdr lst) m)
-		      ))
-	      )
-	    (let recur ((lst (cdr lst)) 
-			(rest (map cdr rest))
-			(m (map car (cons lst rest))))
-	      (if (null? lst) m
-		  (if (less? (car lst) (car m))
-		      (recur (cdr lst) (map cdr rest) (map car (cons lst rest)))
-		      (recur (cdr lst) (map cdr rest) m)
-		      ))
-	      )
-	    )))
-
-
-  (define (kd-elt-index x) (let ((xp (car x))) (if (number? xp) xp (car xp))))
-  (define (kd-elt-value x) (and (pair? (car x)) (cadar x)))
-  (define (kd-elt-point x) (cadr x))
-
-
-  (define (default-<Point> dimension coord)
-
-    (let* (
-	   (dist2 (lambda (a b) (cdist2 dimension a b)))
-
-	   (compare-distance
-	    (lambda (p a b . reltol)
-	      (let ((delta (- (dist2 p a) (dist2 p b))))
-		(if (null? reltol) 
-		    delta 
-		    (if (<= delta (car reltol)) 0 delta)))))
-
-	   (compare-coord 
-	    (lambda (c a b)
-	      (< (coord c a) (coord c b))))
-	      
-	   )
-	    
-    (make-<Point> 
-     dimension coord compare-coord dist2 compare-distance)
-    ))
-
-  (define point? f64vector?)
-  (define make-point f64vector)
-
-
-  (define Point3d
-    (default-<Point> 3 (lambda (i p) (f64vector-ref p i)) ))
-
-  (define Point2d
-    (default-<Point> 2  (lambda (i p) (f64vector-ref p i))))
-
-
-  (define-class <KdTree> 
-
-    ;; constructs a kd-tree from a list of points
-    list->kd-tree
-    ;; constructs a kd-tree from a list of points with indices and values
-    list->kd-tree*
-    ;; nearest neighbor of a point
-    kd-tree-nearest-neighbor
-    ;; the index of the nearest neighbor of a point
-    kd-tree-nearest-neighbor*
-    ;; neighbors of a point within radius r
-    kd-tree-near-neighbors
-    ;; neighbors of a point within radius r (using point indices)
-    kd-tree-near-neighbors*
-    ;; k nearest neighbors of a point
-    kd-tree-k-nearest-neighbors
-    ;; removes a point from the tree
-    kd-tree-remove
-    ;; retrieves all points between two planes
-    kd-tree-slice
-    ;; retrieves all points between two planes (using point indices)
-    kd-tree-slice*
-    ;; checks that the kd-tree properties are preserved
-    kd-tree-is-valid?
-    kd-tree-all-subtrees-are-valid?
-
+        (if (null? rest)
+            (let recur ((lst (cdr lst)) (m (car lst)))
+              (if (null? lst) m
+                  (if (less? (car lst) m)
+                      (recur (cdr lst) (car lst))
+                      (recur (cdr lst) m)
+                      ))
+              )
+            (let recur ((lst (cdr lst)) 
+                        (rest (map cdr rest))
+                        (m (map car (cons lst rest))))
+              (if (null? lst) m
+                  (if (less? (car lst) (car m))
+                      (recur (cdr lst) (map cdr rest) (map car (cons lst rest)))
+                      (recur (cdr lst) (map cdr rest) m)
+                      ))
+              )
+            ))
     )
+
+  
+  (define (split kspace sorted axis)
+
+    (let* ((median-index (quotient (length sorted) 2)))
+
+      (let-values (((lte gte) (split-at sorted median-index)))
+
+        
+        (let ((median (car gte)))
+          
+          (let-values (((lt xeq) (span (lambda (x) (< (coord kspace x axis)
+                                                      (coord kspace median axis)))
+                                       lte)))
+            
+            (if (null? xeq)
+                (values median lt (cdr gte))
+                (let ((split-index (length lt)))
+                  (values (car xeq) lt (append (cdr xeq) gte))))
+            ))
+        ))
+    )
+
+
 
 
   (define (positive-or-zero-integer? x)
@@ -211,805 +145,435 @@ EOF
 
   (define-datatype kd-tree kd-tree?
     (KdNode (left  kd-tree?)
-	    (p     point?)
-	    (i     positive-or-zero-integer?)
-            (v     (lambda (v) (or (not v) v)))
-	    (right kd-tree?)
-	    (axis  positive-or-zero-integer?)
-	    (ci    cis:cis?)
-	    )
-    (KdLeaf (ii cis:cis?) 
-	    (pp (lambda (lst) (every point? lst))) 
-	    (vv (lambda (v) (or (list? v) (not v))))
-	    (axis positive-or-zero-integer?) )
+            (i     positive-or-zero-integer?)
+            (right kd-tree?)
+            (axis  positive-or-zero-integer?)
+            )
+    (KdLeaf (ii list?)
+            (axis positive-or-zero-integer?) )
     )
 
 
   (define (kd-tree-empty? t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) (cis:empty? ii))
-	   (else #f)))
-
+           (KdLeaf (ii axis) (null? ii))
+           (else #f)))
   
-  (define (kd-tree-map f t)
+  (define (kd-tree-map f kspace t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) 
-		   (KdLeaf ii (map f pp) vv axis))
-	   (KdNode (l x i v r axis ci)
-		   (KdNode (kd-tree-map f l)
-			   (f x)
-			   i v
-			   (kd-tree-map f r)
-			   axis ci))
-	   ))
+           (KdLeaf (ii axis) 
+                   (KdLeaf (map (lambda (i) (f (point kspace i))) ii) axis))
+           (KdNode (l i r axis)
+                   (KdNode (kd-tree-map f kspace l)
+                           (f (point kspace i))
+                           (kd-tree-map f kspace r)
+                           axis))
+           ))
   
-  (define (kd-tree-for-each f t)
+  (define (kd-tree-for-each f kspace t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) (for-each f pp))
-	   (KdNode (l x i v r axis ci)
-		   (begin
-		     (kd-tree-for-each f l)
-		     (f x)
-		     (kd-tree-for-each f r)
-		     ))
-	   ))
+           (KdLeaf (ii axis) (for-each (lambda (i) (f (point kspace i))) ii))
+           (KdNode (l i r axis)
+                   (begin
+                     (kd-tree-for-each f kspace l)
+                     (f (point kspace i))
+                     (kd-tree-for-each f kspace r)
+                     ))
+           ))
 
 
-  (define (kd-tree-for-each* f t)
+  
+  (define (kd-tree-fold-right f init kspace t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis)
-                   (if vv (for-each f (zip (reverse (cis:elements ii)) vv) pp)
-                       (for-each f (reverse (cis:elements ii)) pp)))
-	   (KdNode (l x i v r axis ci)
-		   (begin
-		     (kd-tree-for-each* f l)
-		     (if v (f (list i v) x) (f i x))
-		     (kd-tree-for-each* f r)
-		     ))
-	   ))
+           (KdLeaf (ii axis) 
+                   (fold-right (lambda (i ax) (f (point kspace i) ax)) init ii))
+           (KdNode (l i r axis)
+                   (let* ((init2 (kd-tree-fold-right f init kspace r))
+                          (init3 (f (point kspace i) init2)))
+                     (kd-tree-fold-right f init3 kspace l)))
+           ))
 
   
-  (define (kd-tree-fold-right f init t)
+  (define (kd-tree-fold-right* f init kspace t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) 
-		   (fold-right f init pp))
-	   (KdNode (l p i v r axis ci)
-		   (let* ((init2 (kd-tree-fold-right f init r))
-			  (init3 (f p init2)))
-		     (kd-tree-fold-right f init3 l)))
-	   ))
+           (KdLeaf (ii axis) 
+                   (fold-right (lambda (i ax) (f i (point kspace i) ax)) init ii))
+           (KdNode (l i r axis)
+                   (let* ((init2 (kd-tree-fold-right* f init kspace r))
+                          (init3 (f i (point kspace i) init2)))
+                     (kd-tree-fold-right* f init3 kspace l)))
+           ))
 
+  (define (kd-tree->list kspace t)
+    (kd-tree-fold-right* (lambda (i p ax) (cons i ax)) '() kspace t))
 
-  (define (kd-tree-fold-right* f init t)
-    (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) 
-		   (if vv
-		       (fold-right f init (zip (reverse (cis:elements ii)) vv) pp)
-		       (fold-right f init (reverse (cis:elements ii)) pp)))
-	   (KdNode (l x i v r axis ci)
-		   (let* ((init2 (kd-tree-fold-right* f init r))
-			  (init3 (if v (f (list i v) x init2) (f i x init2))))
-		     (kd-tree-fold-right* f init3 l)))
-	   ))
-  
-  
-
-  
-  (define (kd-tree->list t)
-    (kd-tree-fold-right cons '() t))
-
-  
-  (define (kd-tree->list* t #!key (fn list))
-    (kd-tree-fold-right* 
-     (lambda (iv p ax) (cons (fn iv p) ax))
-     '() t))
-  
   
   ;; Returns a list containing t and all its subtrees, including the
   ;; leaf nodes.
   
   (define (kd-tree-subtrees t)
     (cases kd-tree t
-		  (KdLeaf (ii pp vv axis)  (list t))
-		  (KdNode (l x i v r axis ci)
-			  (append (kd-tree-subtrees l) 
-				  (list t) 
-				  (kd-tree-subtrees r)))
-		  ))
+           (KdLeaf (ii axis)  (list t))
+           (KdNode (l i r axis)
+                   (append (kd-tree-subtrees l) 
+                           (list t)
+                           (kd-tree-subtrees r)))
+           ))
 
   
-  (define (kd-tree-node-points t)
-    (cases kd-tree t
-		  (KdLeaf (ii pp vv axis)  pp)
-		  (KdNode (l x i v r axis ci) (list x))
-		  ))
-  
-  (define (kd-tree-node-indices t)
-    (cases kd-tree t
-		  (KdLeaf (ii pp vv axis) ii)
-		  (KdNode (l x i v r axis ci) ci)
-		  ))
-
-  (define (kd-tree-node-values t)
-    (cases kd-tree t
-		  (KdLeaf (ii pp vv axis) vv)
-		  (KdNode (l x i v r axis ci) (list v))
-		  ))
 
   (define (kd-tree-size t)
     (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) (cis:cardinal ii))
-	   (KdNode (l x i v r axis ci) (cis:cardinal ci))))
+           (KdLeaf (ii axis) (length ii))
+           (KdNode (l i r axis) (+ 1 (length l) (length r)))))
+  
+  
+  ;; (define (insert pseq tree k i #!key (leaf-size (* 4 (max (log2 (kd-tree-size tree)) 1))))
+  ;;   (let ((point (elt-ref pseq i)))
+  ;;     (cases kd-tree t
+  ;;            (KdLeaf (ii axis) 
+  ;;                    (if (null? ii)
+  ;;                        (KdLeaf (list i) i axis)
+  ;;                        (let ((ii1 (merge (list i) ii (lambda (x y) (< (coord x axis) (coord y axis ))))))
+  ;;                          (if (> (length ii1) leaf-size)
+  ;;                              (let
+  ;;                                  ((axis1   (modulo (+ 1 axis) k))
+  ;;                                   (median  (list-ref ii1 (quotient (length ii1) 2)))
+  ;;                                   (medianc (coord median axis)))
+  ;;                                (let-values (((ii-left ii-right)
+  ;;                                              (partition (lambda (x) (< (coord x axis) medianc))
+  ;;                                                         ii1)))
+  ;;                                  (let ((left (KdLeaf ii-left axis1))
+  ;;                                        (right (KdLeaf (remove median ii-right) axis1)))
+  ;;                                    (KdNode left median right axis))))
+  ;;                              (KdLeaf ii1 pp1 axis)))
+  ;;                        ))
+  ;;          (KdNode (left i right axis)::ts => 
+  ;;                 if n > nodesize
+  ;;                 then (case lst of 
+  ;;                           u::rest => addPoint' (nodesize,leafsize) (P,[KdLeaf{ii=[],axis=0}],j,n-1,joinTrees P (t,u)::rest)
+  ;;                         | [] => addPoint' (nodesize,leafsize) (P,[KdLeaf{ii=[],axis=0}],j,n,[t]))
+  ;;                 else addPoint' (nodesize,leafsize) (P,ts,j,n+1,t::lst)
+  ;;               | [] => (KdLeaf {ii=[j],axis=0}) :: lst
 
-  (define (kd-tree-min-index t)
-    (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) (cis:get-min ii))
-	   (KdNode (l x i v r axis ci) (cis:get-min ci))))
+  
+  
+  
+  
+  ;; Construct a kd-tree from an kspace
+  (define (make kspace #!key (axis 0) (points (range 0 (size kspace))))
 
-  (define (kd-tree-max-index t)
-    (cases kd-tree t
-	   (KdLeaf (ii pp vv axis) (cis:get-max ii))
-	   (KdNode (l x i v r axis ci) (cis:get-max ci))))
+    (letrec (
+             (k (dimension kspace))
+             (axial-compare (lambda (axis) (lambda (p0 p1) (compare-coord kspace p0 p1 axis))))
+             (make/depth
+              (lambda (points depth #!key (bucket-size (* 10 (max (log2 (length points)) 1))))
 
+                (let* ((axis (modulo depth k))
+                       (ii (list.sort points (axial-compare axis)))
+                       (extent (length ii)))
+                  
+                  (if (<= extent bucket-size)
 
-
-  ;; construct a kd-tree from a list of points
-  (define=> (make-list->kd-tree/depth <Point>)
-
-    (lambda (make-value)
-
-      (letrec (
-	       (split
-		(lambda (m n points depth)
-
-		  (let* ((axis   (modulo depth dimension))
-			 (cmpfn  (lambda (p0 p1) (compare-coord axis (car p0) (car p1))))
-			 (sorted (sort points cmpfn))
-			 (median-index (quotient (- n m) 2)))
-
-		    (let-values (((lte gte) (split-at sorted median-index)))
-
-		      (let ((median (car (car gte))))
-
-			(let-values (((lt xeq) (span (lambda (x) (< (coord axis (car x)) (coord axis median))) lte)))
-			  
-			  (if (null? xeq)
-			      (values (car gte) median-index lt (cdr gte))
-			      (let ((split-index (length lt)))
-				(values (car xeq) split-index lt (append (cdr xeq) gte))))
-			))
-		      ))
-		  ))
-
-		(list->kd-tree/depth
-		 (lambda (m n points depth #!key (bucket-size (* 10 (max (log2 (- n m)) 1))) (offset 0))
-
-		   (let ((k (- n m)))
-
-		     (cond
-		      ((null? points) (KdLeaf cis:empty '() '() depth))
-
-		      ((<= k bucket-size)
-
-		       (let* ((es (take points k))
-			      (ps (map car es)) 
-			      (ii (cis:shift offset (cis:interval m (- n 1))))
-			      (vs (and make-value
-				       (map (lambda (i e) (make-value i (cdr e)))
-					    (reverse (cis:elements ii)) 
-					    es)))
-			      )
+                      (KdLeaf ii axis)
+                      
+                      (let-values (((median lt gte) (split kspace ii axis)))
                         
-			(KdLeaf ii ps vs (modulo depth dimension))
-			))
-		    
-		      ((null? (cdr points))
-		       (let* ((e (car points))
-			      (ps (list (car e)) )
-			      (vs (and make-value (list (make-value m (cdr e))))))
-			 
-			 (KdLeaf (cis:shift offset (cis:singleton m) )
-				 ps vs
-				 (modulo depth dimension))
-			 ))
-		      
-		      (else
-		       (let-values (((median median-index lt gte)
-				     (split m n points depth)))
-			 
-			 
-			 (let* ((depth1 (+ 1 depth))
-				(i (+ m median-index offset))
-				(p (car median))
-				(v (and make-value (make-value i (cdr median))))
-				(axis (modulo depth dimension)))
-			   
-			   (KdNode (list->kd-tree/depth m (+ m median-index) lt depth1 
-							bucket-size: bucket-size)
-				   p i v
-				   (list->kd-tree/depth (+ m median-index 1) n gte depth1 
-							bucket-size: bucket-size)
-				   axis 
-				   (cis:shift offset (cis:interval m (- n 1))))))
-		       ))
-		     ))
-		 ))
-	list->kd-tree/depth
-	))
+                        (KdNode (make/depth lt (add1 depth) bucket-size: bucket-size)
+                                median
+                                (make/depth gte (add1 depth) bucket-size: bucket-size)
+                                axis )
+                        ))
+                  ))
+              ))
+             
+      (make/depth points axis)
       )
+    )
+    
+    ;; Returns the nearest neighbor of p in tree t.
+    
+    (define (kd-tree-nearest-neighbor kspace t probe)
 
-  
-  ;; A variant of list->kd-tree specialized for
-  ;; kd-tree-remove. Specifically, it preserves the
-  ;; original point indices.  This variant of
-  ;; list->kd-tree assumes that the input list of points
-  ;; has the form ( (INDEX POINT VALUE) ... )
-
-  (define=> (make-list->kd-tree/depth* <Point>)
-
-      (letrec (
+      (let ((find-nearest
+             (lambda (t1 t2 p probe xp x-probe)
                
-	       (split
-		(lambda (points depth)
-                  
-		  (let* ((axis   (modulo depth dimension))
-			 (cmpfn  (lambda (p0 p1) (compare-coord axis (kd-elt-point p0) (kd-elt-point p1))))
-			 (sorted (sort points cmpfn))
-			 (median-index (quotient (length sorted) 2))
-			 )
+               (let* ((candidates1 
+                       (let ((best1 (kd-tree-nearest-neighbor kspace t1 probe)))
+                         (or (and best1 (list best1 p)) (list p))))
+                      (sphere-intersects-plane? 
+                       (let ((v (- x-probe xp)))
+                         (< (* v v) (squared-distance kspace probe (car candidates1)))))
+                      
+                      (candidates2
+                       (if sphere-intersects-plane?
+                           (let ((nn (kd-tree-nearest-neighbor kspace t2 probe)))
+                             (if nn (append candidates1 (list nn)) candidates1))
+                           candidates1)))
+                 
+                 (minimum-by
+                  candidates2
+                  (lambda (a b) (negative? (compare-distance kspace probe a b))))
+                 ))
+             ))
 
-		    (let-values (((lte gte) (split-at sorted median-index)))
+        (cases kd-tree t
+               (KdLeaf (ii axis)
+                       (let ((res (minimum-by
+                                   ii
+                                   (lambda (a b) (negative? (compare-distance kspace probe a b))))))
+                         (and res (point kspace res))))
 
-		      (let ((median (kd-elt-point (car gte))))
-
-			(let-values (((lt xeq) (span (lambda (x) (< (coord axis (kd-elt-point x)) (coord axis median))) lte)))
-			  
-			  (if (null? xeq)
-			      (values (car gte) lt (cdr gte))
-			      (let ((split-index (length lt)))
-				(values (car xeq) lt (append (cdr xeq) gte))))
-			))
-		      ))
-		  ))
-
-		(list->kd-tree/depth
-		 (lambda (points depth bucket-size)
-
-		   (cond
-
-		    ((null? points) (KdLeaf cis:empty '() '() depth))
-		    
-		    ((<= (length points) bucket-size)
-
-		       (let* (
-			      (ps (map kd-elt-point points)) 
-			      (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
-			      (vs (let ((vs (map kd-elt-value points))) (and (every identity vs) vs)))
-			     )
-                        
-			(KdLeaf ii ps vs (modulo depth dimension))
-			)
-		       )
-		    
-		    ((null? (cdr points))
-
-		     (let* ((ps (map kd-elt-point points))
-			    (ii (fold (lambda (x ax) (cis:add x ax)) cis:empty (map kd-elt-index points)))
-			    (vs (map kd-elt-value points)))
-		       
-		       (KdLeaf ii ps vs (modulo depth dimension))
-		       )
-		     )
-		    
-		   (else
-		    (let-values (((median lt gte)
-				  (split points depth)))
-		      
-		      (let* ((depth1 (+ 1 depth))
-			     (i (kd-elt-index median))
-			     (p (kd-elt-point median))
-			     (v (kd-elt-value median))
-			     (axis (modulo depth dimension))
-			     (l (list->kd-tree/depth lt depth1 bucket-size))
-			     (r (list->kd-tree/depth gte depth1 bucket-size))
-			     )
-
-			(KdNode l p i v r axis 
-				(cis:add i (cis:union (kd-tree-node-indices l) (kd-tree-node-indices r))))
-			))
-		    ))
-                   ))
-                )
-        list->kd-tree/depth
+               (KdNode (l i r axis)
+                       (let ((x-probe (list-ref probe axis))
+                             (xp (coord kspace i axis)))
+                         (if (< x-probe xp)
+                             (find-nearest l r i probe xp x-probe) 
+                             (find-nearest r l i probe xp x-probe)
+                             ))
+                       ))
         ))
-  
-  ;; Returns the nearest neighbor of p in tree t.
-  
-  (define=> (make-kd-tree-nearest-neighbor <Point>)
-    (define (tree-empty? t) (cases kd-tree t (KdLeaf (ii pp vv axis) (cis:empty? ii)) (else #f)))
-    (letrec ((find-nearest
-	      (lambda (t1 t2 p probe xp x-probe)
 
-		(let* ((candidates1 
-			(let ((best1 (nearest-neighbor t1 probe)))
-			  (or (and best1 (list best1 p)) (list p))))
-		       
-		       (sphere-intersects-plane? 
-			(let ((v (- x-probe xp)))
-			  (< (* v v) (dist2 probe (car candidates1)))))
-
-		       (candidates2
-			(if sphere-intersects-plane?
-			    (let ((nn (nearest-neighbor t2 probe)))
-			      (if nn (append candidates1 (list nn)) candidates1))
-			    candidates1)))
-
-		  (minimum-by candidates2 (lambda (a b) (negative? (compare-distance probe a b))))
-		  )))
-
-	     
-	     (nearest-neighbor
-	      (lambda (t probe)
-		(cases kd-tree t
-		       (KdLeaf (ii pp vv axis) 
-			       (minimum-by pp (lambda (a b) (negative? (compare-distance probe a b)))))
-
-		       (KdNode (l p i v r axis ci)
-			       (if (and (tree-empty? l)
-					(tree-empty? r)) p
-					(let ((x-probe (coord axis probe))
-					      (xp (coord axis p)))
-
-					  (if (< x-probe xp) 
-					      (find-nearest l r p probe xp x-probe) 
-					      (find-nearest r l p probe xp x-probe))
-					  ))
-			       ))
-		)))
-      
-      nearest-neighbor
-      ))
-  
-  ;; Applies a user supplied function to the nearest neighbor of p in tree t.
-  
-  (define=> (make-kd-tree-nearest-neighbor* <Point>)
-
-    (define (tree-empty? t) (cases kd-tree t (KdLeaf (ii pp vv axis) (cis:empty? ii)) (else #f)))
-
-    (letrec ((find-nearest
-	      (lambda (t1 t2 i v p probe xp x-probe fn)
-
-		(let* ((candidates1 
-			(let ((best1 (nearest-neighbor t1 probe fn)))
-			  (or (and best1 (list best1 (if v (list (list i v) p) (list i p))))
-			      (list (if v (list (list i v) p) (list i p))))
-                          ))
-		       
-		       (sphere-intersects-plane? 
-			(let ((v (- x-probe xp)))
-			  (< (* v v) (dist2 probe (cadar candidates1)))))
-
-		       (candidates2
-			(if sphere-intersects-plane?
-			    (let ((nn (nearest-neighbor t2 probe fn)))
-			      (if nn (append candidates1 (list nn)) candidates1))
-			    candidates1)))
-
-		  (let ((v (minimum-by candidates2 (lambda (a b) (negative? (compare-distance probe (cadr a) (cadr b)))))))
-		    v)
-		  )))
-
-	     
-	     (nearest-neighbor
-	      (lambda (t probe #!key (fn list))
-		(cases kd-tree t
-		       (KdLeaf (ii pp vv axis) 
-			       (let ((res
-				      (if vv
-					  (minimum-by pp (lambda (a b) (negative? (compare-distance probe a b))) 
-						      (zip (reverse (cis:elements ii)) vv ))
-					  (minimum-by pp (lambda (a b) (negative? (compare-distance probe a b))) 
-						      (reverse (cis:elements ii))))))
-				 (and res (apply fn (reverse res)))))
-
-		       (KdNode (l p i v r axis ci)
-
-			       (if (and (tree-empty? l)
-					(tree-empty? r))
-
-                                   (if v (fn (list i v) p) (fn i p))
-
-				   (let ((x-probe (coord axis probe))
-					 (xp (coord axis p))
-					 (xi i))
-				     (if (< x-probe xp) 
-					 (find-nearest l r i v p probe xp x-probe fn) 
-					 (find-nearest r l i v p probe xp x-probe fn))
-				     ))
-			       ))
-		)))
-      
-      nearest-neighbor
-      ))
-  
     
-  ;; near-neighbors t r p returns all neighbors within distance r from p in tree t.
+    ;; near-neighbors t r p returns all neighbors within distance r from p in tree t.
 
-  (define=> (make-kd-tree-near-neighbors <Point>)
-    (define-inline (tree-empty? t) (cases kd-tree t (KdLeaf (ii pp vv axis) (cis:empty? ii)) (else #f)))
-    (define-inline (filter-fn probe pp d2)
-      (filter-map (lambda (p) 
-		    (let ((pd (dist2 probe p)))
-		      (and (<= pd d2) (list p (sqrt pd) )))) pp))
-    (letrec ((near-neighbors
-	      (lambda (t radius probe)
-		(cases kd-tree t
-		       (KdLeaf (ii pp vv axis)  
-			       (let ((r2 (* radius radius)))
-				 (filter-fn probe pp r2)))
+    (define (kd-tree-near-neighbors kspace t radius probe)
 
-		       (KdNode (l p i v r axis ci)
-			       (let ((maybe-pivot (filter-fn probe (list p) (* radius radius))))
-				 
-				 (if (and (tree-empty? l)
-					  (tree-empty? r))
+      (define (filter-fn probe pp d2)
+        (filter-map (lambda (p) 
+                      (let ((pd (squared-distance kspace probe p)))
+                        (and (<= pd d2) p )))
+                    pp))
 
-				     maybe-pivot
-
-				     (let ((x-probe (coord axis probe))
-					   (xp (coord axis p)))
-
-				       (if (<= x-probe xp)
-
-					   (let ((nearest (append maybe-pivot (near-neighbors l radius probe))))
-					     (if (> (+ x-probe (abs radius)) xp)
-						 (append (near-neighbors r radius probe) nearest)
-						 nearest))
-
-					   (let ((nearest (append maybe-pivot (near-neighbors r radius probe))))
-					     (if (< (- x-probe (abs radius)) xp)
-						 (append (near-neighbors l radius probe) nearest)
-						 nearest)))
-				       ))))
-		       ))
-	      ))
+      (define (get-point p) (point kspace p))
       
-	  near-neighbors
-	  ))
-
-
-  (define=> (make-kd-tree-near-neighbors* <Point>)
-    (define-inline (tree-empty? t) (cases kd-tree t (KdLeaf (ii pp vv axis) (cis:empty? ii)) (else #f)))
-    (define-inline (filter-fn probe pp ii vv r2 fn)
-      (if vv 
-	  (filter-map (lambda (i v p) 
-			(let ((pd (dist2 probe p))) 
-			  (and (<= pd r2) (fn (list i v) p (sqrt pd)))))
-		      (reverse (cis:elements ii)) vv pp)
-	  (filter-map (lambda (i p)
-			(let ((pd (dist2 probe p))) 
-			  (and (<= pd r2) (fn i p (sqrt pd)))))
-		      (reverse (cis:elements ii)) pp)
-	  ))
-
-    (letrec ((near-neighbors
-	      (lambda (t radius probe fn)
-		(cases kd-tree t
-
-		       (KdLeaf (ii pp vv axis)  
-			       (let ((r2 (* radius radius)))
-				 (let ((res (filter-fn probe pp ii vv r2 fn)))
-				   res)))
-
-		       (KdNode (l p i v r axis ci)
-			       (let ((maybe-pivot (filter-fn probe (list p) (cis:singleton i) (and v (list v)) (* radius radius) fn)))
-
-				 (if (and (tree-empty? l)
-					  (tree-empty? r))
-
-				     maybe-pivot
-
-				     (let ((x-probe (coord axis probe))
-					   (xp (coord axis p)))
-
-				       (if (<= x-probe xp)
-
-					   (let ((nearest (append maybe-pivot (near-neighbors l radius probe fn))))
-					     (if (> (+ x-probe (abs radius)) xp)
-						 (append (near-neighbors r radius probe fn) nearest)
-						 nearest))
-
-					   (let ((nearest (append maybe-pivot (near-neighbors r radius probe fn))))
-					     (if (< (- x-probe (abs radius)) xp)
-						 (append (near-neighbors l radius probe fn) nearest)
-						 nearest)))
-
-
-				       ))
-				 ))
-		       ))
-	      ))
-      (lambda (t radius probe #!key (fn list))
-	(near-neighbors t radius probe fn)
-	))
-    )
-  
-
-
-  
-  ;; Returns the k nearest points to p within tree.
-  (define=> (make-kd-tree-k-nearest-neighbors <Point>)
-    (lambda (kd-tree-remove kd-tree-nearest-neighbor)
-      (letrec ((k-nearest-neighbors
-		(lambda (t k probe)
-		  (cases kd-tree t
-
-		       (KdLeaf (ii pp vv axis) 
-			       (let recur ((res '()) (pp pp) (k k))
-				 (if (or (<= k 0) (null? pp)) 
-				     res
-				     (let ((nearest (minimum-by pp (lambda (a b) (negative? (compare-distance probe a b))))))
-				       (recur (cons nearest res)
-					      (remove (lambda (p) (equal? p nearest)) pp)
-					      (- k 1))
-				       ))
-				 ))
-
-		       (else
-			(if (<= k 0) '()
-			    (let* ((nearest (kd-tree-nearest-neighbor t probe))
-				   (tree1 (kd-tree-remove t nearest)))
-			      (cons nearest (k-nearest-neighbors tree1 (- k 1) probe)))
-			    ))
-		       ))
-		))
-	k-nearest-neighbors)))
-
-  
-  ;; removes the point p from t.
-  (define=> (make-kd-tree-remove <Point>)
-    
-    (lambda (list->kd-tree/depth)
-
-      (letrec (
-
-	       (tree-remove
-		(lambda (t p-kill #!key (bucket-size (* 10 (max (log2 (kd-tree-size t)) 1))) (tol 1e-9))
-                  
-                  (let ((tol^2 (* tol tol)))
-                  
-;                  (fprintf (current-error-port) "kd-tree-remove: t = ~A~%" t)
-;                  (fprintf (current-error-port) "kd-tree-remove: p-kill = ~A~%" p-kill)
-
-		  (cases kd-tree t
-			 (KdLeaf (ii pp vv axis) 
-
-;                                 (fprintf (current-error-port) "kd-tree-remove (KdLeaf): ii = ~A~%" (cis:elements ii))
-;                                 (fprintf (current-error-port) "kd-tree-remove (KdLeaf): vv = ~A~%" vv)
-;				 (fprintf (current-error-port) "kd-tree-remove (KdLeaf): pp = ~A~%" pp)
-					 
-				 (if vv
-				     (let ((ipvs (filter-map
-						  (lambda (i p v) (and (< (dist2 p p-kill) tol^2) (list i p v)))
-						  (reverse (cis:elements ii)) pp vv)))
-
-;					 (fprintf (current-error-port) "kd-tree-remove (KdLeaf): ipvs = ~A~%" ipvs)
-
-				       (and (pair? ipvs)
-					    (let ((ii1 (fold (lambda (i ax) (cis:remove i ax)) 
-							     ii (map car ipvs)))
-						  (pp1 (fold (lambda (x ax) (remove (lambda (p) (equal? x p)) ax))
-							     pp (map cadr ipvs)))
-						  (vv1 (fold (lambda (x ax)
-							       (remove (lambda (v) (equal? x v)) ax))
-							     vv (map caddr ipvs)))
-						  )
-;                                              (fprintf (current-error-port) "kd-tree-remove (KdLeaf): ii1 = ~A~%" (cis:elements ii1))
-;                                              (fprintf (current-error-port) "kd-tree-remove (KdLeaf): pp1 = ~A~%" pp1)
-;                                              (fprintf (current-error-port) "kd-tree-remove (KdLeaf): vv1 = ~A~%" vv1)
-
-					      (KdLeaf ii1 pp1 vv1 axis))
-					    ))
-
-				     (let ((ips (filter-map (lambda (i p) (and (< (dist2 p p-kill) tol^2) (list i p)))
-							    (reverse (cis:elements ii)) pp)))
-				       
-;				       (fprintf (current-error-port) "kd-tree-remove (KdLeaf): ips = ~A~%" ips)
-
-				       (and (pair? ips)
-					    (let ((ii1 (fold (lambda (i ax) (cis:remove i ax)) 
-							     ii (map car ips)))
-						  (pp1 (fold (lambda (x ax) (remove (lambda (p) (equal? x p)) ax))
-							     pp (map cadr ips)))
-						  )
-
-;                                              (fprintf (current-error-port) "kd-tree-remove (KdLeaf): ii1 = ~A~%" (cis:elements ii1))
-;                                              (fprintf (current-error-port) "kd-tree-remove (KdLeaf): pp1 = ~A~%" pp1)
-
-                                              (KdLeaf ii1 pp1 vv axis))
-					    ))
-				     ))
-
-			 (KdNode (l p i v r axis ci)
-
-				 (cond ((< (dist2 p p-kill) tol^2)
-					(let ((pts1 (append (kd-tree->list* l) (kd-tree->list* r))))
-					  (list->kd-tree/depth pts1 axis bucket-size)))
-
-				       (else
-
-					(if (< (coord axis p-kill) (coord axis p))
-
-					 (let* ((l1   (tree-remove l p-kill))
-						(l1-is (and l1 (kd-tree-node-indices l1)))
-						(r-is  (kd-tree-node-indices r))
-						(ci1   (cis:add i (cis:union l1-is r-is))))
-
-					   (and l1 (KdNode l1 p i v r axis ci1))
-					   )
-					 
-					 (let* ((r1   (tree-remove r p-kill))
-						(r1-is (and r1 (kd-tree-node-indices r1)))
-						(l-is  (kd-tree-node-indices l))
-						(ci1   (cis:add i (cis:union r1-is l-is))))
-
-					   (and r1 (KdNode l p i v r1 axis ci1))
-
-					   )))
-				     
-				     ))
-			 ))
-		)))
-	tree-remove))
-    )
-
-  ;; Checks whether the K-D tree property holds for a given tree.
-  ;;
-  ;; Specifically, it tests that all points in the left subtree lie to
-  ;; the left of the plane, p is on the plane, and all points in the
-  ;; right subtree lie to the right.
-  
-  (define=> (make-kd-tree-is-valid? <Point>)
-    (lambda (t)
       (cases kd-tree t
-	     (KdLeaf (ii pp vv axis)  #t)
+             (KdLeaf (ii axis)  
+                     (let ((r2 (* radius radius)))
+                       (map get-point (filter-fn probe ii r2))))
+             
+             (KdNode (l p r axis)
+                     (let ((maybe-pivot (filter-fn probe (list p) (* radius radius))))
+                       
+                       (if (and (kd-tree-empty? l)
+                                (kd-tree-empty? r))
+                           
+                           (map get-point maybe-pivot)
+                           
+                           (let ((x-probe (coord kspace probe axis))
+                                 (xp (coord kspace p axis)))
+                             
+                             (if (<= x-probe xp)
+                                 
+                                 (let ((nearest
+                                        (append (map get-point maybe-pivot)
+                                                (kd-tree-near-neighbors kspace l radius probe))))
+                                   (if (> (+ x-probe (abs radius)) xp)
+                                       (append (kd-tree-near-neighbors kspace r radius probe) nearest)
+                                       nearest))
+                                 
+                                 (let ((nearest
+                                        (append (map get-point maybe-pivot)
+                                                (kd-tree-near-neighbors kspace r radius probe))))
+                                   (if (< (- x-probe (abs radius)) xp)
+                                       (append (kd-tree-near-neighbors kspace l radius probe) nearest)
+                                       nearest)))
+                             ))
+                       ))
+             ))
 
-	     (KdNode (l p i v r axis ci)
-		     (let ((x (coord axis p)))
-		       (and (every (lambda (y) (< (coord axis y) x ))
-				   (kd-tree->list l))
-			    (every (lambda (y) (>= (coord axis y) x))
-				   (kd-tree->list r)))))
-	     )))
-  
-  
-  ;; Checks whether the K-D tree property holds for the given tree and
-  ;; all subtrees.
-  
-  (define (make-kd-tree-all-subtrees-are-valid? kd-tree-is-valid?)
-    (lambda (t) (every kd-tree-is-valid? (kd-tree-subtrees t))))
-  
 
-  (define=> (make-kd-tree-slice <Point>)
-    (lambda (x-axis x1 x2 t)
-      (let recur ((t t)  (pts '()))
-	(cases kd-tree t
 
-	       (KdLeaf (ii pp vv axis) 
-		       (append (filter (lambda (p) 
-					 (and (<= x1 (coord x-axis p))
-					      (<= (coord x-axis p) x2)))
-				       pp)
-			       pts))
-			   
 
-	       (KdNode (l p i v r axis ci)
-		       (if (= axis x-axis)
-			   
-			   (cond ((and (<= x1 (coord axis p))
-				       (<= (coord axis p) x2))
-				   (recur l (cons p (recur r pts))))
-				 
-				 ((< (coord axis p) x1)
-				  (recur r pts))
-			       
-				 ((< x2 (coord axis p))
-				  (recur l pts)))
-			   
-			   (if (and (<= x1 (coord x-axis p))
-				    (<= (coord x-axis p) x2))
-			       (recur l (cons p (recur r pts)))
-			       (recur l (recur r pts)))
-			   ))
-	       ))
+    
+    ;; Returns the k nearest points to p within tree.
+    (define (kd-tree-k-nearest-neighbors kspace t k probe)
+
+      (define (get-point p) (point kspace p))
+
+      (cases kd-tree t
+             
+             (KdLeaf (ii axis) 
+                     (let recur ((res '()) (pp pp) (k k))
+                       (if (or (<= k 0) (null? pp))
+                           (map get-point res)
+                           (let ((nearest
+                                  (minimum-by pp
+                                    (lambda (a b) (negative? (compare-distance kspace probe a b))))))
+                             (recur (cons nearest res)
+                                    (filter (lambda (p) (not (equal? p nearest))) ii)
+                                    (- k 1))
+                             ))
+                       ))
+             
+             (else
+              (if (<= k 0) '()
+                  (let* ((nearest (kd-tree-nearest-neighbor kspace t probe))
+                         (tree1 (kd-tree-remove kspace t nearest 1e-3)))
+                    (cons nearest (kd-tree-k-nearest-neighbors kspace tree1 (- k 1) probe)))
+                  ))
+             ))
+
+
+    
+    ;; removes the point p from t.
+    (define (kd-tree-remove kspace t p-kill tol)
+      
+      (let ((tol^2 (* tol tol)))
+
+        (cases kd-tree t
+               (KdLeaf (ii axis)
+                       (let ((ii1
+                              (filter
+                               (lambda (p)
+                                 (> (squared-distance kspace p p-kill) tol^2))
+                               ii)))
+                         
+                         (KdLeaf ii1 axis)))
+
+               (KdNode (l p r axis)
+                       (cond ((< (squared-distance kspace p p-kill) tol^2)
+                              (let ((pts1 (append (kd-tree->list kspace l)
+                                                  (kd-tree->list kspace r))))
+                                (make kspace points: pts1 axis: axis)))
+                             (else
+                              
+                              (if (< (if (list? p-kill) (list-ref p-kill axis)
+                                         (coord kspace p-kill axis))
+                                     (coord kspace p axis))
+                                  
+                                  (let* ((l1 (kd-tree-remove kspace l p-kill tol)))
+                                    (and l1 (KdNode l1 p r axis))
+                                    )
+                                  
+                                  (let* ((r1   (kd-tree-remove kspace r p-kill tol)))
+                                    (and r1 (KdNode l p r1 axis))
+                                    ))
+                             
+                              ))
+               ))
       ))
-  
-  
-  (define=> (make-kd-tree-slice* <Point>)
-    (lambda (x-axis x1 x2 t #!key (fn list))
+
+    
+    ;; Checks whether the K-D tree property holds for a given tree.
+    ;;
+    ;; Specifically, it tests that all points in the left subtree lie to
+    ;; the left of the plane, p is on the plane, and all points in the
+    ;; right subtree lie to the right.
+    
+    (define (kd-tree-is-valid? kspace t)
+      (cases kd-tree t
+             (KdLeaf (ii axis)  #t)
+             
+             (KdNode (l p r axis)
+                     (let ((x (coord kspace p axis)))
+                       (and (every (lambda (y) (< (coord kspace y axis) x ))
+                                   (kd-tree->list kspace l))
+                            (every (lambda (y) (>= (coord kspace y axis) x))
+                                   (kd-tree->list kspace r)))))
+             ))
+    
+    
+    ;; Checks whether the K-D tree property holds for the given tree and
+    ;; all subtrees.
+    
+    (define (kd-tree-all-subtrees-are-valid? kspace t)
+      (every (lambda (t) (kd-tree-is-valid? kspace t))
+             (kd-tree-subtrees t)))
+    
+
+    (define (kd-tree-slice kspace x-axis x1 x2 t)
+      (define (get-point p) (point kspace p))
       (let recur ((t t)  (pts '()))
-	(cases kd-tree t
-	       (KdLeaf (ii pp vv axis) 
-		       (append
-                        (if vv
-                            (filter-map (lambda (i v p) 
-                                          (and (<= x1 (coord x-axis p))
-                                               (<= (coord x-axis p) x2)
-                                               (fn (list i v) p)))
-                                        (reverse (cis:elements ii)) vv pp)
-                            (filter-map (lambda (i p) 
-                                          (and (<= x1 (coord x-axis p))
-                                               (<= (coord x-axis p) x2)
-                                               (fn i p)))
-                                        (reverse (cis:elements ii)) pp))
+        (cases kd-tree t
+
+               (KdLeaf (ii axis) 
+                       (append
+                        (map get-point
+                             (filter (lambda (p) 
+                                       (and (<= x1 (coord kspace p x-axis))
+                                            (<= (coord kspace p x-axis) x2)))
+                                     ii))
                         pts))
+               
 
-	       (KdNode (l p i v r axis ci)
-		       (if (= axis x-axis)
-			   
-			   (cond ((and (<= x1 (coord axis p))
-				       (<= (coord axis p) x2))
-				   (recur l (cons (if v (fn (list i v) p) (fn i p)) (recur r pts))))
-				 
-				 ((< (coord axis p) x1)
-				  (recur r pts))
-			       
-				 ((< x2 (coord axis p))
-				  (recur l pts)))
-			   
-			   (if (and (<= x1 (coord x-axis p))
-				    (<= (coord x-axis p) x2))
-			       (recur l (cons (if v (fn (list i v) p) (fn i p)) (recur r pts)))
-			       (recur l (recur r pts)))
-			   ))
-	       ))
-      ))
+               (KdNode (l p r axis)
+                       (if (= axis x-axis)
+                           
+                           (cond ((and (<= x1 (coord kspace p axis))
+                                       (<= (coord kspace p axis) x2))
+                                  (recur l (cons (get-point p) (recur r pts))))
+                                 
+                                 ((< (coord kspace p axis) x1)
+                                  (recur r pts))
+                                 
+                                 ((< x2 (coord kspace p axis))
+                                  (recur l pts)))
+                           
+                           (if (and (<= x1 (coord kspace p x-axis))
+                                    (<= (coord kspace p x-axis) x2))
+                               (recur l (cons (get-point p) (recur r pts)))
+                               (recur l (recur r pts)))
+                           ))
+               ))
+      )
+    
+  ;; kspace of the spatial map
+  (define-operation (get-kspace smap))
+  ;; nearest neighbor of a point
+  (define-operation (nearest-neighbor smap p))
+  ;; neighbors of a point within radius r
+  (define-operation (near-neighbors smap p r))
+  ;; k nearest neighbors of a point
+  (define-operation (k-nearest-neighbors smap p k))
+  ;; removes a point from the tree
+  (define-operation (remove smap p tol))
+  ;; retrieves all points between two planes
+  (define-operation (slice smap axis l u))
+  (define-operation (is-valid? smap))
+  (define-operation (all-subtrees-are-valid? smap))
 
-  (define (default-<KdTree> point-class)
-    (let* ((list->kd-tree/depth
-	    (make-list->kd-tree/depth point-class))
-           (list->kd-tree/depth*
-	    (make-list->kd-tree/depth* point-class))
-	   (kd-tree-remove
-	    ((make-kd-tree-remove point-class) list->kd-tree/depth*))
-	   (kd-tree-nearest-neighbor
-	    (make-kd-tree-nearest-neighbor point-class)))
+  ;; standard iterators
+  (define-operation (spatial-map->list smap))
+  (define-operation (spatial-map-fold-right smap f init))
+  (define-operation (spatial-map-fold-right* smap f init))
+  (define-operation (spatial-map-for-each smap f))
 
-      (make-<KdTree> 
+    
+  (define (make-kd-tree kspace)
 
-       (lambda (points #!key
-                       (make-point identity) 
-                       (make-value #f)
-                       (offset 0)
-                       )
-	 ((list->kd-tree/depth make-value) 
-          0 (length points) 
-	  (map (lambda (p) (cons (make-point p) p)) points) 0 
-          offset: offset))
+    (let ((kdt (make kspace)))
+      
+      (object
+       ((spatial-map? self) #t)
+       ((empty? self) (kd-tree-empty? kdt))
+       ((get-kspace self) kspace)
+       ((size self) (size kspace))
+       ((dimension self) (dimension kspace))
+       ((nearest-neighbor self p)
+        (kd-tree-nearest-neighbor kspace kdt p))
+       ((near-neighbors self p r)
+        (kd-tree-near-neighbors kspace kdt r p))
+       ((k-nearest-neighbors self p k)
+        (kd-tree-k-nearest-neighbors kspace kdt k p))
+       ((remove self p tol)
+        (kd-tree-remove kspace kdt p tol))
+       ((slice self axis l u)
+        (kd-tree-slice kspace axis l u kdt))
+       ((is-valid? self)
+        (kd-tree-is-valid? kspace kdt))
+       ((all-subtrees-are-valid? self)
+        (kd-tree-all-subtrees-are-valid? kspace kdt))
+       ((spatial-map-for-each self f)
+        (kd-tree-for-each f kspace kdt))
+       ((spatial-map-fold-right self f init)
+        (kd-tree-fold-right f init kspace kdt))
+       ((spatial-map-fold-right* self f init)
+        (kd-tree-fold-right* f init kspace kdt))
+       ((spatial-map->list self)
+        (kd-tree->list kspace kdt))
+       ))
+    )
+    )
 
-       (lambda (points) (list->kd-tree/depth* points 0))
-
-       (make-kd-tree-nearest-neighbor point-class)
-       (make-kd-tree-nearest-neighbor* point-class)
-       (make-kd-tree-near-neighbors point-class)
-       (make-kd-tree-near-neighbors* point-class)
-       ((make-kd-tree-k-nearest-neighbors point-class)
-	kd-tree-remove kd-tree-nearest-neighbor)
-       kd-tree-remove
-       (make-kd-tree-slice point-class)
-       (make-kd-tree-slice* point-class)
-       (make-kd-tree-is-valid? point-class)
-       (make-kd-tree-all-subtrees-are-valid? 
-	(make-kd-tree-is-valid? point-class)) 
-       )))
-
-  (define KdTree3d 
-    (default-<KdTree> Point3d))
-
-  (define KdTree2d 
-    (default-<KdTree> Point2d))
-
-
-
-)
 
