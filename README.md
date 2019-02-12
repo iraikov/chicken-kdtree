@@ -25,105 +25,160 @@ Y-coordinates; at the next branch level the chosen axis is Z, and so
 on.
 
 
-### Point
+### K-dimensional point space
 
-This library currently only supports points in 3D space.
+Module `kspace` provides facilities for managament of K-dimensional point spaces.
 
-<procedure>make-point3d:: DOUBLE * DOUBLE * DOUBLE -> POINT3D</procedure>
+<procedure>make-space:: COORDS -> SPACE</procedure>
 
-3D point constructor.
+Given a list of coordinate collections of length K, constructs a yasos  K-dimensional point space object. The coordinate collections can be SRFI-4 f32vectors, or collection objects as defined in the yasos collections module.
 
-<procedure>point3d? :: POINT3D -> BOOL</procedure>
+<procedure>space? :: OBJECT -> BOOL</procedure>
 
-3D point predicate.
+K-dimensional point space predicate.
 
-<procedure>point3d-x :: POINT3D -> DOUBLE</procedure>
-<procedure>point3d-y :: POINT3D -> DOUBLE</procedure>
-<procedure>point3d-z :: POINT3D -> DOUBLE</procedure>
+<procedure>dimension :: OBJECT -> INT</procedure>
+Returns the dimensionality of the point space.
 
-Accessors for the x,y,z coordinates of a 3D point.
+<procedure>point :: OBJECT * INT -> REAL LIST</procedure>
+Returns the coordinates of the point at the given index.
+
+<procedure>coord :: OBJECT * INT * INT -> FLOAT</procedure>
+Returns the k'th coordinate of i'th point, starting from 0.
+
+
+<procedure>compare-coord :: SPACE * INT * INT * INT -> INT</procedure>
+
+Given the indices of two points and a coordinate index, compares the
+respective coordinates of the two points and returns -1, 0, or 1,
+depending on whether the coordinates are less than, equal, or greater
+than each other.
+
+<procedure>squared-distance :: SPACE * INT * INT -> FLOAT</procedure>
+
+Returns the square of the Euclidean distance between the points at the given indices.
+
+<procedure>compare-distance :: SPACE * INT * INT -> INT</procedure>
+
+Compares the square of the Euclidean distance between the points at the given indices.
+
+### K-D tree interface
 
 #### Constructors
    
-<procedure>list->kd-tree:: POINT3D LIST  -> KD-TREE</procedure>
+<procedure>make-kd-tree:: SPACE -> OBJECT</procedure>
 
-Given a list of points, constructs and returns a K-D tree object.
+Given a `kspace` object, constructs and returns a yasos spatial map object.
 
 #### Predicates
 
-<procedure>kd-tree? :: KD-TREE -> BOOL </procedure>
+<procedure>spatial-map? :: OBJECT -> BOOL </procedure>
 
-Returns `#t` if the given object is a K-D tree, `#f` otherwise.
+Returns `#t` if the given object is a spatial map, `#f` otherwise.
 
-<procedure>kd-tree-empty? :: KD-TREE -> BOOL  </procedure>
+<procedure>empty? :: OBJECT -> BOOL  </procedure>
 
-Returns `#t` if the given K-D tree object is empty, `#f` otherwise.
+Returns `#t` if the given spatial map object is empty, `#f` otherwise.
 
-<procedure>kd-tree-is-valid? :: KD-TREE -> BOOL  </procedure>
+<procedure>kd-tree-is-valid? :: OBJECT -> BOOL  </procedure>
 
-Checks whether the K-D tree property holds for the given tree.
+Checks whether the K-D tree property holds for the given spatial map.
 Specifically, it tests that all points in the left subtree lie to the
 left of the plane, p is on the plane, and all points in the right
 subtree lie to the right.
 
 <procedure>kd-tree-all-subtrees-are-valid? :: KD-TREE -> BOOL </procedure>
 
-Checks whether the K-D tree property holds for the given tree and all
-subtrees.
+Checks whether the K-D tree property holds for the given spatial map
+and all subtrees.
 
 #### Accessors
 
-<procedure>kd-tree->list :: KD-TREE -> POINT3D LIST</procedure>
+<procedure>get-kspace :: OBJECT -> KSPACE</procedure>
 
-Returns a list with the points contained in the tree.
+Returns the underlying `kspace` object of the map.
 
-<procedure>kd-tree->list* :: KD-TREE -> (INT . POINT3D) LIST </procedure>
+<procedure>spatial-map->list :: KD-TREE -> POINT LIST</procedure>
 
-Returns a list where every element has the form `(i . p)`, where `i`
-is the relative index of this point, and `p` is the point.
-
-<procedure>kd-tree-subtrees :: KD-TREE -> KD-TREE LIST</procedure>
-
-<procedure>kd-tree-point :: KD-TREE -> POINT3D  </procedure>
-
-#### Combinators
-
-<procedure>kd-tree-map </procedure>
-
-<procedure>kd-tree-for-each </procedure>
-
-<procedure>kd-tree-for-each* </procedure>
-
-<procedure>kd-tree-fold-right </procedure>
-
-<procedure>kd-tree-fold-right* </procedure>
+Returns a list with the points contained in the spatial map.
 
 #### Query procedures
 
-<procedure>kd-tree-nearest-neighbor </procedure>
+<procedure>nearest-neighbor :: SPATIAL-MAP * POINT -> POINT</procedure>
 
-<procedure>kd-tree-near-neighbors </procedure>
+Nearest neighbor of a point.
 
-<procedure>kd-tree-near-neighbors* </procedure>
+<procedure>near-neighbors :: SPATIAL-MAP * POINT * RADIUS -> POINT LIST </procedure>
 
-<procedure>kd-tree-k-nearest-neighbors </procedure>
+Neighbors of a point within radius r.
 
-<procedure>kd-tree-slice </procedure>
+<procedure>k-nearest-neighbors :: SPATIAL-MAP * POINT * INT -> POINT LIST </procedure>
 
-<procedure>kd-tree-slice* </procedure>
+K nearest neighbors of a point.
+
+<procedure>slice :: SPATIAL-MAP * AXIS * COORD * COORD -> POINT LIST </procedure>
+
+Returns all points between two planes.
+
+#### Combinators
+
+<procedure>spatial-map-for-each :: SPATIAL-MAP * F -> VOID </procedure>
+
+Point iterator.
+
+<procedure>spatial-map-fold :: SPATIAL-MAP * F -> AX </procedure>
+
+<procedure>spatial-map-fold-right :: SPATIAL-MAP * F * INIT -> INIT </procedure>
+
+Fold on points.
+
+<procedure>spatial-map-fold-right* :: SPATIAL-MAP * F * INIT -> INIT </procedure>
+
+Fold on points and their indices.
 
 #### Modifiers
 
-<procedure>kd-tree-remove </procedure>
+<procedure>kd-tree-remove :: SPATIAL-MAP * POINT -> SPATIAL-MAP </procedure>
 
 
 ## Examples
 
 
+```scheme
 
+(import scheme (chicken base) 
+        yasos random-mtzig kspace kd-tree)
+
+(let* (
+       (n (inexact->exact 1e5)) (k 40) (r 1.0) (randst (init 9))
+       
+       ;; generate random coordinates
+       (xs (randn/f32! n randst))
+       (ys (randn/f32! n randst))
+       (zs (randn/f32! n randst))
+       ;; create a kspace
+       (pts (list xs ys zs))
+       (kspace3d (make-space pts))
+       ;; create the spatial map
+       (kdt (make-kd-tree kspace3d))
+       ;; choose a random point index
+       (xi (inexact->exact (modulo (random! randst) n)))
+       ;; retrieve the coordinates of the chosen point
+       (x  (point kspace3d xi))
+       )
+
+    (print "nearest-neighbor of " x ": " (nearest-neighbor kdt x))
+    (print k " nearest neighbors of " x ": " (k-nearest-neighbors kdt x k))
+    (print "near neighbors of " x " within " r ": " (near-neighbors kdt k r))
+
+)
+
+
+```
 
 ## Version history
 
+- 6.0 : refactored to use yasos, ported to CHICKEN 5
 - 5.0 : added list->kd-tree* procedure to KdTree class
 - 4.1-4.8 : Using f64vector for internal point representation
 - 4.0-4.1 : Added with-distance? flag to kd-tree-near-neighbors
@@ -134,7 +189,7 @@ is the relative index of this point, and `p` is the point.
 ## License
 
 >
-> Copyright 2012-2016 Ivan Raikov
+> Copyright 2012-2019 Ivan Raikov
 > 
 >  This program is free software: you can redistribute it and/or modify
 >  it under the terms of the GNU General Public License as published by
