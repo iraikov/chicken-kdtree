@@ -5,7 +5,7 @@
  (license "GPL-3")
  (category data)
  (author "Ivan Raikov")
- (dependencies srfi-1 yasos )
+ (dependencies srfi-1 datatype yasos )
  (test-dependencies test random-mtzig)
 ;; (component-options (csc-options "-O" "-d2"))
  (components (extension kspace)
